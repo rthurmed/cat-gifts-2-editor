@@ -1,6 +1,11 @@
-import kaplay, { AreaComp, ColorComp, GameObj, OpacityComp, PosComp, RectComp, Vec2, ZComp } from "kaplay";
+import kaplay, { AreaComp, ColorComp, GameObj, OpacityComp, PosComp, RectComp, Vec2, width, ZComp } from "kaplay";
 
-type RectObject = GameObj<PosComp | RectComp | ColorComp | OpacityComp | AreaComp | ZComp>
+type EditorRect = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
 
 const EDITOR_VALUES_KEY = "EDITOR_VALUES";
 
@@ -12,6 +17,9 @@ const k = kaplay({
 k.debug.inspect = false;
 
 export async function main() {
+    let rects: EditorRect[] = [];
+    let firstPos: Vec2 | undefined = undefined;
+
     const houseSprite = await k.loadSprite("house", "sprites/house.png");
     k.add([
         k.sprite("house")
@@ -23,75 +31,16 @@ export async function main() {
         mousePos.y = Math.round(mousePos.y);
         return mousePos;
     }
-
-    const firstPoint = k.add([
-        k.pos(0, 0),
-        k.rect(1, 1),
-        k.color(k.BLUE),
-        k.opacity(0),
-    ]);
-
-    const mousePoint = k.add([
-        k.pos(0, 0),
-        k.rect(1, 1),
-        k.color(k.BLUE)
-    ]);
-
-    const previewRect = k.add([
-        k.pos(0, 0),
-        k.rect(0, 0),
-        k.color(k.RED),
-        k.opacity(0),
-    ])
-
-    let objects: RectObject[] = [];
-    let firstPos: Vec2 | undefined = undefined;
-
-    // CAMERA MOVEMENT
     
     k.camPos(houseSprite.width / 2, houseSprite.height / 2);
     let zoom = 1;
 
-    function makeRectObject(pos: Vec2, width: number, height: number): RectObject {
-        return k.add([
-            "rect",
-            k.pos(pos),
-            k.rect(width, height),
-            k.area(),
-            k.color(k.RED),
-            k.opacity(.5),
-            k.z(10)
-        ]);
-    }
-
-    function exportObjects(objects: RectObject[]): string {
-        const rects = objects.map(object => ({
-            id: object.id,
-            x: object.pos.x,
-            y: object.pos.y,
-            width: object.width,
-            height: object.height
-        }));
+    function exportObjects(rects: EditorRect[]): string {
         return JSON.stringify(rects)
     }
 
-    function importObjects(value: string): RectObject[] {
-        const rects = JSON.parse(value) as {
-            id: number;
-            x: number;
-            y: number;
-            width: number;
-            height: number;
-        }[];
-        const objects = [];
-        k.destroyAll("rect");
-        for (let i = 0; i < rects.length; i++) {
-            const rect = rects[i];
-            // FIXME: verify if already added
-            const object = makeRectObject(k.vec2(rect.x, rect.y), rect.width, rect.height);
-            objects.push(object);
-        }
-        return objects;
+    function importObjects(value: string): EditorRect[] {
+        return JSON.parse(value) as EditorRect[];
     }
 
     function setZoom(value: number) {
@@ -110,30 +59,25 @@ export async function main() {
             setZoom(zoom * 0.9);
         }
         if (key === "o") {
-            const value = exportObjects(objects);
+            const value = exportObjects(rects);
             localStorage.setItem(EDITOR_VALUES_KEY, value);
         }
         if (key === "i") {
             const value = localStorage.getItem(EDITOR_VALUES_KEY);
             if (value) {
-                objects = importObjects(value);
+                rects = importObjects(value);
             }
         }
 
         if (key === "escape") {
             firstPos = undefined;
-            firstPoint.opacity = 0;
-            previewRect.opacity = 0;
         }
         if (k.isKeyDown("shift") && key === "r") { // reset
             firstPos = undefined;
-            objects = [];
             k.destroyAll("rect");
         }
         if (k.isKeyDown("control") && key === "z") { // undo
-            const object = objects[objects.length - 1];
-            object.destroy();
-            delete objects[objects.length - 1]
+            rects.pop();
         }
 
         const movementModifier = k.isKeyDown("shift") ? 10 : 1;
@@ -156,41 +100,68 @@ export async function main() {
     });
 
     k.onMouseMove((_pos, delta) => {
-        const pixelMousePos = pixelMousePoint();
-        mousePoint.pos = pixelMousePos;
-
-        if (firstPos !== undefined) {
-            previewRect.width = pixelMousePos.x - firstPos.x + 1;
-            previewRect.height = pixelMousePos.y - firstPos.y + 1;
-        }
-        
         if (k.isMouseDown("left")) {
             const invert = delta.scale(-1).scale(1/zoom);
             k.camPos(k.camPos().add(invert));
         }
     });
 
-    // OBJECT CREATION
-
     k.onMousePress("right", () => {
         const mousePos = pixelMousePoint();
         if (firstPos !== undefined) {
             const width = mousePos.x - firstPos.x + 1;
             const height = mousePos.y - firstPos.y + 1;
-            const object = makeRectObject(firstPos, width, height);
-            objects.push(object);
+            rects.push({
+                x: firstPos.x,
+                y: firstPos.y,
+                width,
+                height,
+            })
             firstPos = undefined;
-            previewRect.opacity = 0;
-            previewRect.width = 0;
-            previewRect.height = 0;
-            firstPoint.opacity = 0;
         } else {
             firstPos = mousePos;
-            previewRect.pos = firstPos;
-            previewRect.opacity = .25;
-            firstPoint.opacity = 1;
         }
-        firstPoint.pos = firstPos ||  k.vec2(-100, -100);
+    });
+
+    k.onDraw(() => {
+        const mouse = pixelMousePoint();
+        k.drawRect({
+            pos: mouse,
+            width: 1,
+            height: 1,
+            color: k.BLUE
+        });
+
+        if (firstPos) {
+            k.drawRect({
+                pos: firstPos,
+                width: 1,
+                height: 1,
+                color: k.BLUE
+            });
+
+            // preview
+            const width = mouse.x - firstPos.x + 1;
+            const height = mouse.y - firstPos.y + 1;
+            k.drawRect({
+                pos: firstPos,
+                width,
+                height,
+                color: k.RED,
+                opacity: .25
+            });
+        }
+        
+        for (let i = 0; i < rects.length; i++) {
+            const { x, y, width, height } = rects[i];
+            k.drawRect({
+                pos: k.vec2(x, y),
+                width,
+                height,
+                color: k.RED,
+                opacity: .5
+            });
+        }
     });
 }
 
