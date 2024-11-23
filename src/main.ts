@@ -1,10 +1,17 @@
-import kaplay, { AreaComp, ColorComp, GameObj, OpacityComp, PosComp, RectComp, Vec2, width, ZComp } from "kaplay";
+import kaplay, { rect, Vec2 }  from "kaplay";
 
 type EditorRect = {
     x: number;
     y: number;
     width: number;
     height: number;
+}
+
+type EditorRectType = 'solid' | 'platform';
+
+type EditorResult = {
+    solids: EditorRect[];
+    platforms: EditorRect[];
 }
 
 const EDITOR_VALUES_KEY = "EDITOR_VALUES";
@@ -17,13 +24,26 @@ const k = kaplay({
 k.debug.inspect = false;
 
 export async function main() {
-    let rects: EditorRect[] = [];
+    let result: EditorResult = {
+        solids: [],
+        platforms: [],
+    }
     let firstPos: Vec2 | undefined = undefined;
+    let rectTypeMode: EditorRectType = 'solid';
 
     const houseSprite = await k.loadSprite("house", "sprites/house.png");
     k.add([
         k.sprite("house")
     ]);
+
+    function getTypeColor(rectType: EditorRectType) {
+        switch (rectType) {
+            case "platform":
+                return k.GREEN;
+            default:
+                return k.RED;
+        }
+    }
 
     function pixelMousePoint() {
         const mousePos = k.toWorld(k.mousePos());
@@ -35,20 +55,19 @@ export async function main() {
     k.camPos(houseSprite.width / 2, houseSprite.height / 2);
     let zoom = 1;
 
-    function exportObjects(rects: EditorRect[]): string {
-        return JSON.stringify(rects)
-    }
-
-    function importObjects(value: string): EditorRect[] {
-        return JSON.parse(value) as EditorRect[];
-    }
-
     function setZoom(value: number) {
         zoom = k.clamp(value, 0.1, 1000);
         k.camScale(zoom, zoom);
     }
 
     k.onKeyPress((key) => {
+        if (key === "1") {
+            rectTypeMode = "solid";
+        }
+        if (key === "2") {
+            rectTypeMode = "platform";
+        }
+
         if (key === "0") {
             setZoom(1);
         }
@@ -59,13 +78,14 @@ export async function main() {
             setZoom(zoom * 0.9);
         }
         if (key === "o") {
-            const value = exportObjects(rects);
+            const value = JSON.stringify(result);
+            console.log("export", value);
             localStorage.setItem(EDITOR_VALUES_KEY, value);
         }
         if (key === "i") {
             const value = localStorage.getItem(EDITOR_VALUES_KEY);
             if (value) {
-                rects = importObjects(value);
+                result = JSON.parse(value) as EditorResult;
             }
         }
 
@@ -77,7 +97,12 @@ export async function main() {
             k.destroyAll("rect");
         }
         if (k.isKeyDown("control") && key === "z") { // undo
-            rects.pop();
+            if (rectTypeMode === "platform") {
+                result.platforms.pop();
+            }
+            if (rectTypeMode === "solid") {
+                result.solids.pop();
+            }
         }
 
         const movementModifier = k.isKeyDown("shift") ? 10 : 1;
@@ -107,37 +132,49 @@ export async function main() {
     });
 
     k.onMousePress("right", () => {
-        const mousePos = pixelMousePoint();
+        const mouse = pixelMousePoint();
         if (firstPos !== undefined) {
-            const width = mousePos.x - firstPos.x + 1;
-            const height = mousePos.y - firstPos.y + 1;
-            rects.push({
-                x: firstPos.x,
-                y: firstPos.y,
-                width,
-                height,
-            })
+            const x = firstPos.x;
+            const y = firstPos.y;
+            const width = mouse.x - firstPos.x + 1;
+            const height = mouse.y - firstPos.y + 1;
+
+            if (rectTypeMode === "solid") {
+                result.solids.push({ x, y, width, height })
+            }
+            if (rectTypeMode === "platform") {
+                result.platforms.push({ x, y, width, height })
+            }
             firstPos = undefined;
         } else {
-            firstPos = mousePos;
+            firstPos = mouse;
         }
     });
 
     k.onDraw(() => {
         const mouse = pixelMousePoint();
+
         k.drawRect({
             pos: mouse,
             width: 1,
             height: 1,
-            color: k.BLUE
+            color: getTypeColor(rectTypeMode)
         });
+
+        k.drawText({
+            text: rectTypeMode,
+            pos: k.vec2(0, k.height()),
+            anchor: "botleft",
+            fixed: true,
+            size: 32,
+        })
 
         if (firstPos) {
             k.drawRect({
                 pos: firstPos,
                 width: 1,
                 height: 1,
-                color: k.BLUE
+                color: getTypeColor(rectTypeMode)
             });
 
             // preview
@@ -147,18 +184,29 @@ export async function main() {
                 pos: firstPos,
                 width,
                 height,
-                color: k.RED,
+                color: getTypeColor(rectTypeMode),
                 opacity: .25
             });
         }
         
-        for (let i = 0; i < rects.length; i++) {
-            const { x, y, width, height } = rects[i];
+        for (let i = 0; i < result.solids.length; i++) {
+            const { x, y, width, height } = result.solids[i];
             k.drawRect({
                 pos: k.vec2(x, y),
                 width,
                 height,
-                color: k.RED,
+                color: getTypeColor('solid'),
+                opacity: .5
+            });
+        }
+
+        for (let i = 0; i < result.platforms.length; i++) {
+            const { x, y, width, height } = result.platforms[i];
+            k.drawRect({
+                pos: k.vec2(x, y),
+                width,
+                height,
+                color: getTypeColor('platform'),
                 opacity: .5
             });
         }
