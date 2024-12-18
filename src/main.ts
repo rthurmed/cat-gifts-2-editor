@@ -1,17 +1,17 @@
 import kaplay, { rect, Vec2 }  from "kaplay";
 
+type EditorRectType = 'solid' | 'platform' | 'ladder';
+
 type EditorRect = {
     x: number;
     y: number;
     width: number;
     height: number;
+    type: EditorRectType;
 }
 
-type EditorRectType = 'solid' | 'platform';
-
 type EditorResult = {
-    solids: EditorRect[];
-    platforms: EditorRect[];
+    rects: EditorRect[];
 }
 
 const EDITOR_VALUES_KEY = "EDITOR_VALUES";
@@ -25,8 +25,7 @@ k.debug.inspect = false;
 
 export async function main() {
     let result: EditorResult = {
-        solids: [],
-        platforms: [],
+        rects: [],
     }
     let firstPos: Vec2 | undefined = undefined;
     let rectTypeMode: EditorRectType = 'solid';
@@ -40,6 +39,8 @@ export async function main() {
         switch (rectType) {
             case "platform":
                 return k.GREEN;
+            case "ladder":
+                return k.YELLOW;
             default:
                 return k.RED;
         }
@@ -66,6 +67,9 @@ export async function main() {
         }
         if (key === "2") {
             rectTypeMode = "platform";
+        }
+        if (key === "3") {
+            rectTypeMode = "ladder";
         }
 
         if (key === "0") {
@@ -97,12 +101,7 @@ export async function main() {
             k.destroyAll("rect");
         }
         if (k.isKeyDown("control") && key === "z") { // undo
-            if (rectTypeMode === "platform") {
-                result.platforms.pop();
-            }
-            if (rectTypeMode === "solid") {
-                result.solids.pop();
-            }
+            result.rects.pop();
         }
 
         const movementModifier = k.isKeyDown("shift") ? 10 : 1;
@@ -139,12 +138,13 @@ export async function main() {
             const width = mouse.x - firstPos.x + 1;
             const height = mouse.y - firstPos.y + 1;
 
-            if (rectTypeMode === "solid") {
-                result.solids.push({ x, y, width, height })
-            }
-            if (rectTypeMode === "platform") {
-                result.platforms.push({ x, y, width, height })
-            }
+            result.rects.push({
+                x,
+                y,
+                width,
+                height,
+                type: rectTypeMode
+            })
             firstPos = undefined;
         } else {
             firstPos = mouse;
@@ -189,24 +189,13 @@ export async function main() {
             });
         }
         
-        for (let i = 0; i < result.solids.length; i++) {
-            const { x, y, width, height } = result.solids[i];
+        for (let i = 0; i < result.rects.length; i++) {
+            const { x, y, width, height, type } = result.rects[i];
             k.drawRect({
                 pos: k.vec2(x, y),
                 width,
                 height,
-                color: getTypeColor('solid'),
-                opacity: .5
-            });
-        }
-
-        for (let i = 0; i < result.platforms.length; i++) {
-            const { x, y, width, height } = result.platforms[i];
-            k.drawRect({
-                pos: k.vec2(x, y),
-                width,
-                height,
-                color: getTypeColor('platform'),
+                color: getTypeColor(type),
                 opacity: .5
             });
         }
